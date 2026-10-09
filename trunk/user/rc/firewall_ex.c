@@ -2194,6 +2194,9 @@ restore_app_rules(void)
 #if defined(APP_ZAPRET)
 	reload_zapret();
 #endif
+#if defined(APP_D2K)
+	reload_d2k();
+#endif
 #if defined(APP_WIREGUARD)
 	update_wireguard_client();
 #endif

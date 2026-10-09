@@ -717,6 +717,8 @@ ej_dump(int eid, webs_t wp, int argc, char **argv)
 		snprintf(filename, sizeof(filename), "%s/%s", STORAGE_TORCONF_DIR, file+8);
 	else if (strncmp(file, "zapretc.", 8)==0)
 		snprintf(filename, sizeof(filename), "%s/%s", STORAGE_ZAPRET_DIR, file+8);
+	else if (strncmp(file, "d2kconf.", 8)==0)
+		snprintf(filename, sizeof(filename), "%s/%s", STORAGE_D2K_DIR, file+8);
 	else if (strncmp(file, "privoxy.", 8)==0)
 		snprintf(filename, sizeof(filename), "%s/%s", STORAGE_PRIVOXY_DIR, file+8);
 	else
@@ -934,6 +936,14 @@ validate_asp_apply(webs_t wp, int sid)
 #if defined(APP_ZAPRET)
 			else if (!strncmp(v->name, "zapretc.", 8)) {
 				if (write_textarea_to_file(value, STORAGE_ZAPRET_DIR, file_name)) {
+					restart_needed_bits |= event_mask;
+					need_mtd_write = 1;
+				}
+			}
+#endif
+#if defined(APP_D2K)
+			else if (!strncmp(v->name, "d2kconf.", 8)) {
+				if (write_textarea_to_file(value, STORAGE_D2K_DIR, file_name)) {
 					restart_needed_bits |= event_mask;
 					need_mtd_write = 1;
 				}
@@ -2174,6 +2184,11 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 #else
 	int found_app_zapret = 0;
 #endif
+#if defined(APP_D2K)
+	int found_app_d2k = 1;
+#else
+	int found_app_d2k = 0;
+#endif
 #if defined(SUPPORT_WPAD)
 	int found_support_wpad = 1;
 #else
@@ -2348,6 +2363,7 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 		"function found_app_quic() { return %d;}\n"
 		"function found_app_stubby() { return %d;}\n"
 		"function found_app_zapret() { return %d;}\n"
+		"function found_app_d2k() { return %d;}\n"
 		"function found_app_tor() { return %d;}\n"
 		"function found_app_privoxy() { return %d;}\n"
 		"function found_app_dnscrypt() { return %d;}\n"
@@ -2375,6 +2391,7 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 		found_app_quic,
 		found_app_stubby,
 		found_app_zapret,
+		found_app_d2k,
 		found_app_tor,
 		found_app_privoxy,
 		found_app_dnscrypt,

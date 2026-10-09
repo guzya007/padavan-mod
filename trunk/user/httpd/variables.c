@@ -569,6 +569,10 @@
 			{"zapretc.ipset.list", "File", NULL, FALSE},
 			{"zapretc.ipset-exclude.list", "File", NULL, EVM_RESTART_ZAPRET},
 #endif
+#if defined(APP_D2K)
+			{"d2k_enable", "", NULL, EVM_RESTART_D2K},
+			{"d2kconf.config", "File", NULL, EVM_RESTART_D2K},
+#endif
 #if defined(APP_TOR)
 			{"tor_enable", "", NULL, EVM_RESTART_TOR|EVM_RESTART_DHCPD},
 			{"torconf.torrc", "File", NULL, EVM_RELOAD_TOR|EVM_BLOCK_UNSAFE},
@@ -1047,6 +1051,9 @@
 #endif
 #if defined(APP_ZAPRET)
 		{EVM_RESTART_ZAPRET,		EVT_RESTART_ZAPRET,		RCN_RESTART_ZAPRET,	EVM_RESTART_FIREWALL},
+#endif
+#if defined(APP_D2K)
+		{EVM_RESTART_D2K,		EVT_RESTART_D2K,		RCN_RESTART_D2K,	EVM_RESTART_FIREWALL},
 #endif
 #if defined(APP_TOR)
 		{EVM_RESTART_TOR,		EVT_RESTART_TOR,		RCN_RESTART_TOR,	EVM_RESTART_FIREWALL|EVM_RELOAD_TOR|EVM_UPDATE_TOR},

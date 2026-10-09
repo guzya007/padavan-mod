@@ -91,6 +91,9 @@ romfs:
 	cd $(INSTALLDIR)/sbin && ln -sf rc ntpc_updated
 	cd $(INSTALLDIR)/sbin && ln -sf rc ntpc_syncnow
 	cd $(INSTALLDIR)/sbin && ln -sf rc restart_zapret
+ifeq ($(CONFIG_FIRMWARE_INCLUDE_D2K),y)
+	cd $(INSTALLDIR)/sbin && ln -sf rc restart_d2k
+endif
 	cd $(INSTALLDIR)/sbin && ln -sf rc start_ddns
 	cd $(INSTALLDIR)/sbin && ln -sf rc update_resolvconf
 	cd $(INSTALLDIR)/sbin && ln -sf rc restart_dns

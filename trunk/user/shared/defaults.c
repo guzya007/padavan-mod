@@ -639,6 +639,9 @@ struct nvram_pair router_defaults[] = {
 	{ "zapret_clients", "192.168.1.0/24,10.8.0.0/24" },
 	{ "zapret_clients_allowed", "" },
 #endif
+#if defined (APP_D2K)
+	{ "d2k_enable", "0" },
+#endif
 #if defined (APP_TOR)
 	{ "tor_enable", "0" },
 	{ "tor_proxy_mode", "0" }, // transparent proxy: 0 - disabled, 1 - redirect allowed, 2 - redirect all

@@ -1279,6 +1279,12 @@ handle_notifications(void)
 			restart_zapret();
 		}
 #endif
+#if defined(APP_D2K)
+		else if (strcmp(entry->d_name, RCN_RESTART_D2K) == 0)
+		{
+			restart_d2k();
+		}
+#endif
 #if defined(APP_TOR)
 		else if (strcmp(entry->d_name, RCN_RESTART_TOR) == 0)
 		{
@@ -1789,6 +1795,11 @@ main(int argc, char **argv)
 #if defined(APP_ZAPRET)
 	else if (!strcmp(base, "restart_zapret")) {
 		restart_zapret();
+	}
+#endif
+#if defined(APP_D2K)
+	else if (!strcmp(base, "restart_d2k")) {
+		restart_d2k();
 	}
 #endif
 	else if (!strcmp(base, "start_ddns")) {

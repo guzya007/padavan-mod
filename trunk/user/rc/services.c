@@ -365,6 +365,39 @@ void reload_zapret(void){
 }
 #endif
 
+#if defined(APP_D2K)
+int is_d2k_run(void){
+	if (check_if_file_exist("/usr/sbin/d2kd"))
+	{
+		if (pids("d2kd"))
+			return 1;
+	}
+	return 0;
+}
+
+void stop_d2k(void){
+	eval("/usr/bin/d2k.sh", "stop");
+}
+
+void start_d2k(void){
+	if (!get_ap_mode() && nvram_get_int("d2k_enable") == 1)
+		eval("/usr/bin/d2k.sh", "start");
+}
+
+void restart_d2k(void){
+	stop_d2k();
+	start_d2k();
+}
+
+/* Правила D2K живут в mangle и сносятся при перестройке межсетевого экрана.
+ * reapply переставляет их, не трогая сами службы: заново поднимать d2kd/d2kc
+ * ради смены правил не нужно, а пересобранный каталог планов — это минуты. */
+void reload_d2k(void){
+	if (!get_ap_mode() && nvram_get_int("d2k_enable") == 1 && is_d2k_run())
+		eval("/usr/bin/d2k.sh", "reapply");
+}
+#endif
+
 #if defined(APP_TOR)
 int
 is_tor_run(void)
@@ -669,6 +702,9 @@ start_services_once(int is_ap_mode)
 #if defined(APP_ZAPRET)
 		start_zapret();
 #endif
+#if defined(APP_D2K)
+		start_d2k();
+#endif
 #if defined(APP_PRIVOXY)
 		start_privoxy();
 #endif
@@ -733,6 +769,9 @@ stop_services(int stopall)
 #endif
 #if defined(APP_ZAPRET)
 	stop_zapret();
+#endif
+#if defined(APP_D2K)
+	stop_d2k();
 #endif
 	stop_networkmap();
 	stop_lltd();

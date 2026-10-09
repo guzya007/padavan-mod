@@ -48,6 +48,7 @@
 #define RCN_RESTART_DOH			"restart_doh"
 #define RCN_RESTART_STUBBY		"restart_stubby"
 #define RCN_RESTART_ZAPRET		"restart_zapret"
+#define RCN_RESTART_D2K			"restart_d2k"
 #define RCN_RESTART_TOR			"restart_tor"
 #define RCN_RELOAD_TOR			"reload_tor"
 #define RCN_UPDATE_TOR			"update_tor"

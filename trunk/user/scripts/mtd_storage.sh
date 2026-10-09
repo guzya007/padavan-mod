@@ -205,6 +205,7 @@ func_fill()
 	script_ezbtn="$dir_storage/ez_buttons_script.sh"
 	script_wpad="$dir_storage/wpad.dat"
 	script_zapret="/usr/bin/zapret.sh"
+	script_d2k="/usr/bin/d2k.sh"
 	script_tor="/usr/bin/tor.sh"
 	script_vpnc_post="$dir_storage/vpnc_post_script.sh"
 
@@ -804,6 +805,13 @@ EOF
 	# create zapret files
 	if [ -x "$script_zapret" ]; then
 		$script_zapret >/dev/null
+	fi
+
+	# create d2k dir and seed its config from /usr/share/d2k/config.default
+	# (нужно до запуска веб-сервера: httpd пишет настройки в готовый каталог,
+	#  сам его не создаёт)
+	if [ -x "$script_d2k" ]; then
+		$script_d2k config >/dev/null
 	fi
 
 	# create tor config

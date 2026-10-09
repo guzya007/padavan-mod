@@ -145,6 +145,8 @@ ifneq (,$(filter y,$(CONFIG_FIRMWARE_INCLUDE_ZAPRET) $(CONFIG_FIRMWARE_INCLUDE_Z
 dir_y						+= zapret
 endif
 
+dir_$(CONFIG_FIRMWARE_INCLUDE_D2K)		+= d2k
+
 dir_$(SHADOWSOCKS_ENABLED)			+= shadowsocks
 dir_$(CONFIG_FIRMWARE_INCLUDE_ZEROTIER)		+= zerotier
 dir_$(CONFIG_FIRMWARE_INCLUDE_REDSOCKS2)	+= redsocks

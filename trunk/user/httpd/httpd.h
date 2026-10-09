@@ -36,6 +36,7 @@
 #define STORAGE_TORCONF_DIR	"/etc/storage/tor"
 #define STORAGE_PRIVOXY_DIR	"/etc/storage/privoxy"
 #define STORAGE_ZAPRET_DIR	"/etc/storage/zapret"
+#define STORAGE_D2K_DIR		"/etc/storage/d2k"
 #define STORAGE_STUBBY_DIR	"/etc/storage/stubby"
 
 #define PROFILE_FIFO_UPLOAD	"/tmp/settings_u.prf"

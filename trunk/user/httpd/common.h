@@ -96,6 +96,7 @@ typedef u_int8_t u8;
 #define EVM_UPDATE_TOR			(1ULL << 51)
 #define EVM_RELOAD_TOR			(1ULL << 52)
 #define EVM_FLUSH_IPSET_DHCPD		(1ULL << 53)
+#define EVM_RESTART_D2K			(1ULL << 54)
 
 #define EVM_RELOAD_FIREWALL		(1ULL << 60)
 #define EVM_RESTART_REBOOT		(1ULL << 62)
@@ -152,6 +153,7 @@ typedef u_int8_t u8;
 #define EVT_RESTART_TRMD		3
 #define EVT_RESTART_ARIA		3
 #define EVT_RESTART_ZAPRET		1
+#define EVT_RESTART_D2K			1
 #define EVT_RESTART_DOH			1
 #define EVT_RESTART_STUBBY		1
 #define EVT_RESTART_TOR			2

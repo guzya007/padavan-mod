@@ -550,6 +550,13 @@ void start_zapret(void);
 void restart_zapret(void);
 void reload_zapret(void);
 #endif
+#if defined(APP_D2K)
+int is_d2k_run(void);
+void stop_d2k(void);
+void start_d2k(void);
+void restart_d2k(void);
+void reload_d2k(void);
+#endif
 #if defined(APP_TOR)
 int is_tor_run(void);
 void stop_tor(void);

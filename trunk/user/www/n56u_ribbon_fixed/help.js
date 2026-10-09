@@ -187,7 +187,8 @@ helpcontent[25] = new Array("",
 				"<#Adm_Svc_doh_desc#>",
 				"<#Service_Stubby_Desc#>",
 				"<#Service_Stubby_Mode_Desc#>",
-				"<#Service_DNSCrypt_Mode_Desc#>");
+				"<#Service_DNSCrypt_Mode_Desc#>",
+				"<#Adm_Svc_d2k_desc#>");
 
 // VPN
 helpcontent[26] = new Array("",

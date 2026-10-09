@@ -545,6 +545,24 @@ if [ "$CONFIG_FIRMWARE_INCLUDE_SHORTCUT_FE" = "y" ] ; then
 	func_enable_kernel_param "CONFIG_NF_CONNTRACK_EVENTS"
 	func_enable_kernel_param "CONFIG_NF_CONNTRACK_CHAIN_EVENTS"
 fi
+############################# D2K #####################################
+if [ "$CONFIG_FIRMWARE_INCLUDE_D2K" = "y" ] ; then
+	### Правило RST-защиты в OUTPUT помечается "-m comment", а возвраты для
+	### broadcast/local — "-m addrtype". Без этих двух модулей S99d2k не падает
+	### (строки прикрыты "|| true" и запасными вариантами по явным адресам),
+	### но правила просто не встают — поломка тихая, поэтому включаем.
+	func_enable_kernel_param_as_m "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE"
+	func_enable_kernel_param_as_m "CONFIG_NETFILTER_XT_MATCH_COMMENT"
+	### nf_conntrack_netlink: по нему d2kd опрашивает состояние соединений
+	### (детектор "тишины QUIC"). Без модуля работает всё, кроме этого детектора.
+	func_enable_kernel_param_as_m "CONFIG_NF_CT_NETLINK"
+	### d2k-log-maintenance.sh обрезает журналы через mktemp; без апплета
+	### ротация молча ничего не делает, и /tmp растёт до упора.
+	func_enable_busybox_param "CONFIG_MKTEMP"
+	### CONFIG_IP_SET здесь намеренно НЕ трогается: модули ipset в этой прошивке
+	### внешние (user/ipset/ipset-7.24, их ставит tools/depmod.sh по
+	### CONFIG_FIRMWARE_INCLUDE_IPSET), и встроенные 6.x с ними конфликтуют.
+fi
 ############################# DEFAULT KERNEL MODULES ##################
 ### nfqueue
 func_enable_kernel_param_as_m "CONFIG_NETFILTER_NETLINK_QUEUE"
