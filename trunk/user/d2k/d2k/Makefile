@@ -18,7 +18,7 @@ RELEASE_ID = padavan-$(shell printf '%.7s' $(SRC_COMMIT))
 # из каталога каждого из них все четыре пути указывают либо на его
 # собственный include, либо на include соседа, либо сами на себя.
 D2K_INCS = -Iinclude -I../core/include -I../datapath/include -I../detect/include
-D2K_CFLAGS = $(CFLAGS) $(D2K_INCS) -D_DEFAULT_SOURCE
+D2K_CFLAGS = $(CFLAGS) $(D2K_INCS) -D_DEFAULT_SOURCE -DIPV6_HDRINCL=36
 D2K_LDFLAGS = $(LDFLAGS)
 
 # -Werror и -pedantic апстрима рассчитаны на clang+musl из Zig; gcc 7.5 с
