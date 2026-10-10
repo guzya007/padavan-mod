@@ -208,7 +208,7 @@ EOF
 	exit 2
 }
 
-[ "$(id -u)" != "0" ] && error "запускать только от root"
+#[ "$(id -u)" != "0" ] && error "запускать только от root"
 
 case "$1" in
 config)
