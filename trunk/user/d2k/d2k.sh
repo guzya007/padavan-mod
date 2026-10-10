@@ -12,6 +12,7 @@
 #   * заводит /etc/storage/d2k и первый config (команда config — её зовёт
 #     mtd_storage.sh на каждой загрузке);
 #   * сверяется с nvram d2k_enable, прежде чем поднимать службу;
+#   * грузит модули Netfilter ДО запуска службы (см. load_modules ниже);
 #   * предупреждает про аппаратный ускоритель NAT, который уводит пакеты
 #     мимо NFQUEUE;
 #   * отвечает понятным отказом на команды, которых в прошивке нет
@@ -121,6 +122,68 @@ check_hwnat() {
 	return 1
 }
 
+# МОДУЛИ ЯДРА ДО ЗАПУСКА СЛУЖБЫ.
+#
+# Почти весь нужный Netfilter в этой прошивке собран модулями, а ни одна из
+# автоматических загрузок до них не доходит:
+#   * tools/depmod.sh удаляет modules.alias, поэтому request_module() ядра —
+#     "net-pf-16-proto-12" из netlink_create() и "nfnetlink-subsys-3" из
+#     nfnetlink_rcv_msg() — не находит ничего;
+#   * busybox modprobe собран без CONFIG_FEATURE_MODUTILS_ALIAS и псевдонимы
+#     тоже не разбирает.
+# Работает только явный modprobe по настоящему имени модуля. modules.dep
+# depmod.sh оставляет, так что зависимости modprobe разрешает сам.
+#
+# У апстрима свой load_modules(), но в start_engine он стоит ПОСЛЕ запуска
+# датапата и после ожидания привязки очереди:
+#       spawn_daemon ... d2kd --queue "$QUEUE_NUM" ...
+#       пока 5 с: awk ... /proc/net/netfilter/nfnetlink_queue
+#       [ -z "$bound" ] && die "очередь $QUEUE_NUM не привязалась"
+#       load_modules
+#       fw_up
+# На Keenetic, под который он писался, очередь к этому моменту уже есть. Здесь
+# на холодной загрузке nfnetlink_queue не загружен, самого файла
+# /proc/net/netfilter/nfnetlink_queue ещё не существует (его создаёт этот
+# модуль), привязка не наступает — и загрузка модулей просто не выполняется.
+# Отсюда и наблюдавшееся поведение: d2k поднимался, в панели ошибок не было, а
+# трафик мимо; после "modprobe nfnetlink_queue" из zapret (user/zapret/zapret.sh)
+# модуль оставался в памяти, и следующий запуск d2k работал.
+#
+# Перечислены только те, что в NEWIFI-D2 действительно модули. В ядро собраны и
+# в список не входят: xt_mark (CONFIG_NETFILTER_XT_MARK=y — и совпадение, и
+# цель MARK), xt_connmark (CONFIG_NETFILTER_XT_CONNMARK=y — вместе с целью
+# CONNMARK, отдельного xt_CONNMARK.ko в 3.4 нет), xt_multiport, xt_conntrack.
+NF_MODULES="nfnetlink nfnetlink_queue xt_NFQUEUE iptable_mangle ip6table_mangle xt_connbytes xt_addrtype xt_comment nf_conntrack_netlink"
+
+# Правила туннеля Telegram: "-m set ... -j REDIRECT" в таблице nat
+# (d2k-tg-firewall.sh). Модули ipset грузит сам rc при загрузке
+# (user/rc/rc.c, load_ipset_modules), а ipt_REDIRECT — никто:
+# CONFIG_IP_NF_TARGET_REDIRECT=m, и без него правило v4 не встаёт.
+NF_MODULES_TG="ipt_REDIRECT"
+
+NFQUEUE_PROC="/proc/net/netfilter/nfnetlink_queue"
+
+load_modules() {
+	kver="$(uname -r 2>/dev/null)"
+	for m in "$@"; do
+		# Встроенный в ядро или уже загруженный модуль виден в /sys/module.
+		[ -d "/sys/module/$m" ] && continue
+		modprobe -q "$m" >/dev/null 2>&1 && continue
+		# Запасной путь, если modules.dep не пережил пересборку раздела.
+		ko="$(find "/lib/modules/$kver" -name "$m.ko" -type f 2>/dev/null | head -1)"
+		[ -n "$ko" ] && insmod "$ko" >/dev/null 2>&1
+	done
+	return 0
+}
+
+# Единственная проверка, которая решает: нет этого файла — датапат не привяжет
+# очередь, и запуск встанет на ожидании привязки.
+check_nfqueue() {
+	[ -e "$NFQUEUE_PROC" ] && return 0
+	log "ВНИМАНИЕ: нет $NFQUEUE_PROC — модуль nfnetlink_queue не загрузился. Датапат не сможет привязать очередь NFQUEUE. Проверьте, что в прошивке есть /lib/modules/$(uname -r)/kernel/net/netfilter/nfnetlink_queue.ko"
+	return 1
+}
+
 unsupported() {
 	log "команда '$1' в этой прошивке не поддерживается: $2"
 	exit 1
@@ -163,6 +226,8 @@ start)
 	init_storage || error "не создать $STORAGE_DIR"
 	init_runtime || error "не создать $RUNTIME_DIR"
 	check_hwnat
+	load_modules $NF_MODULES
+	check_nfqueue
 	exec "$SERVICE" start
 	;;
 restart)
@@ -176,11 +241,25 @@ restart)
 		exec "$SERVICE" stop
 	fi
 	check_hwnat
+	load_modules $NF_MODULES
+	check_nfqueue
 	exec "$SERVICE" restart
 	;;
-stop|status|reapply|heal|log-tick|engine-start|engine-stop|engine-restart|ppe-ensure)
+reapply|heal|engine-start|engine-restart)
+	# Эти четыре ставят правила или поднимают движок заново — модули нужны им
+	# так же, как start. heal вызывает d2k-fw-heal.sh, который при развале
+	# перезапускает движок целиком.
+	init_storage || error "не создать $STORAGE_DIR"
+	init_runtime || error "не создать $RUNTIME_DIR"
+	load_modules $NF_MODULES
+	check_nfqueue
+	exec "$SERVICE" "$1"
+	;;
+stop|status|log-tick|engine-stop|ppe-ensure)
 	# status идёт наружу без изменений: d2k-fw-heal.sh принимает решение,
 	# разбирая именно эти строки ("датапат: работает", "правила: стоят").
+	# Модули здесь не грузятся: снятие правил и чтение состояния работают с
+	# тем, что уже есть, а гасить модулем то, чего нет, нечего.
 	# ppe-ensure у апстрима сам проверяет наличие библиотеки PPE и без неё
 	# тихо возвращает успех — пропускаем как есть.
 	init_storage || error "не создать $STORAGE_DIR"
@@ -193,6 +272,10 @@ telegram-enable|telegram-disable|telegram-restart|telegram-reapply|tg-heal|tg-st
 	fi
 	init_storage || error "не создать $STORAGE_DIR"
 	init_runtime || error "не создать $RUNTIME_DIR"
+	case "$1" in
+	telegram-disable|tg-stop-rules) ;;
+	*) load_modules $NF_MODULES_TG ;;
+	esac
 	exec "$SERVICE" "$1"
 	;;
 save)

@@ -18,7 +18,11 @@ RELEASE_ID = padavan-$(shell printf '%.7s' $(SRC_COMMIT))
 # из каталога каждого из них все четыре пути указывают либо на его
 # собственный include, либо на include соседа, либо сами на себя.
 D2K_INCS = -Iinclude -I../core/include -I../datapath/include -I../detect/include
-D2K_CFLAGS = $(CFLAGS) $(D2K_INCS) -D_DEFAULT_SOURCE -DIPV6_HDRINCL=36
+# padavan-compat.h добирает то, чего нет в заголовках uClibc-ng (IPV6_HDRINCL).
+# Через -include, а не -D: определения в нём закрыты #ifndef, так что когда
+# библиотека макрос объявит сама, повторного определения не будет. Путь
+# абсолютный — сборка идёт из каталогов $(SRC_NAME)/*, не отсюда.
+D2K_CFLAGS = $(CFLAGS) $(D2K_INCS) -D_DEFAULT_SOURCE -include $(CURDIR)/padavan-compat.h
 D2K_LDFLAGS = $(LDFLAGS)
 
 # -Werror и -pedantic апстрима рассчитаны на clang+musl из Zig; gcc 7.5 с
@@ -79,6 +83,15 @@ endif
 	$(ROMFSINST) -d -p +x $(SRC_NAME)/files/S99d2k /usr/share/d2k/d2k-service
 	$(ROMFSINST) -p +x $(SRC_NAME)/files/d2k-fw-heal.sh /usr/share/d2k/d2k-fw-heal.sh
 	$(ROMFSINST) -p +x $(SRC_NAME)/files/d2k-log-maintenance.sh /usr/share/d2k/d2k-log-maintenance.sh
+# files/d2k-ppe-deoffload.sh НЕ ставится намеренно. Он целиком про Keenetic:
+# ставит "-j PPE" с "-m connskip", а в этой прошивке нет ни цели PPE, ни
+# совпадения connskip — ускорителем здесь управляет nvram hw_nat_mode
+# (user/rc/net.c, is_hwnat_allow), и про него предупреждает d2k.sh.
+# Без файла S99d2k не подключает его через ".", и все проверки
+# "command -v d2k_ppe_*" в нём честно возвращают 0: ppe_up, ppe_down и
+# ppe_ensure становятся пустыми операциями, в status строки про PPE не
+# печатаются, а "ppe-ensure" из d2k-fw-heal.sh отдаёт успех. Команды
+# ppe-remove/ppe-status d2k.sh отклоняет сам, до службы.
 ifeq ($(CONFIG_FIRMWARE_INCLUDE_D2K_TELEGRAM),y)
 	$(ROMFSINST) -p +x $(SRC_NAME)/files/d2k-tg-firewall.sh /usr/share/d2k/d2k-tg-firewall.sh
 	$(ROMFSINST) -p +x $(SRC_NAME)/files/d2k-tg-watchdog.sh /usr/share/d2k/d2k-tg-watchdog.sh

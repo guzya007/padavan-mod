@@ -559,6 +559,19 @@ if [ "$CONFIG_FIRMWARE_INCLUDE_D2K" = "y" ] ; then
 	### d2k-log-maintenance.sh обрезает журналы через mktemp; без апплета
 	### ротация молча ничего не делает, и /tmp растёт до упора.
 	func_enable_busybox_param "CONFIG_MKTEMP"
+	### Встроенная команда "command" оболочки ash. В штатной конфигурации
+	### busybox она выключена, а S99d2k проверяет через "command -v" и наличие
+	### двоичных файлов, и наличие своих функций — 13 мест. Без неё "command"
+	### возвращает 127, и fw_family_up() на строке
+	###     command -v "$fw_tool" >/dev/null 2>&1 || return 3
+	### объявляет iptables недоступным: правила не ставятся, служба падает с
+	### ошибкой при запуске (поле: "d2k не запускался, выдавал ошибки").
+	### Заодно молча пропускались fw_iptables_down() и rst_rules_down(), то
+	### есть старые правила не снимались.
+	### Апплет "which" (CONFIG_WHICH=y) заменой не является: он ищет только по
+	### PATH и функции оболочки не видит, а пять из тринадцати проверок —
+	### именно функции (d2k_ppe_ensure/remove/status).
+	func_enable_busybox_param "CONFIG_ASH_CMDCMD"
 	### CONFIG_IP_SET здесь намеренно НЕ трогается: модули ipset в этой прошивке
 	### внешние (user/ipset/ipset-7.24, их ставит tools/depmod.sh по
 	### CONFIG_FIRMWARE_INCLUDE_IPSET), и встроенные 6.x с ними конфликтуют.
