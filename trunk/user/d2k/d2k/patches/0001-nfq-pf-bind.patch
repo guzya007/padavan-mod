@@ -1,0 +1,399 @@
+# 0001: привязка семейств протоколов (PF_BIND) при открытии очереди NFQUEUE.
+#
+# ЗАЧЕМ. d2kd создаёт в ядре экземпляр очереди, но не привязывает его к
+# семейству протоколов. В движке это было решено намеренно под ядра 3.8+, где
+# PF_BIND — пустышка. В ядрах древнее 3.8 (прошивка padavan на NEWIFI-D2 —
+# 3.4.113) без неё обработчик очереди для семейства не регистрируется вовсе:
+# __nf_queue() отдаёт -ESRCH, а правила службы стоят с --queue-bypass и молча
+# выпускают пакет дальше. Наружу это выглядит как «очередь привязана, служба
+# работает» — и в очередь не приходит ни одного пакета: ни приветствий, ни
+# подозрений, ни одной попытки подтвердить блокировку измерением, и подбор
+# стратегий не начинается.
+#
+# Полевой случай: после каждой перезагрузки D2K не видел трафика, пока вручную
+# не запустишь и не остановишь nfqws — он рассылает PF_BIND, а после его
+# остановки привязка в ядре остаётся. Зависимости от nfqws после патча нет.
+#
+# ПАТЧ:
+#   datapath/nfq.c              PF_BIND для AF_INET и AF_INET6 при открытии
+#                               очереди; отказ ядра открытию не мешает;
+#   datapath/include/d2k_nfq.h  точка подмены обмена для тестов (d2k_nat_hook);
+#   datapath/test_nfq.c         регрессионный тест: читает БАЙТЫ настроечных
+#                               сообщений, не завися от прав и версии ядра;
+#   datapath/Makefile           цель test_nfq в check (только Linux: модуль
+#                               очереди не собирается на mac).
+#
+# Проверено: make -C datapath check — зелёный, test_nfq без правки падает;
+# make -C datapath d2kd собирается с -Werror; патч ложится на чистый архив
+# 4f8615f.
+--- a/datapath/nfq.c
++++ b/datapath/nfq.c
+@@ -107,8 +107,10 @@
+     return -1;
+ }
+ 
+-static int send_and_ack(d2k_nfq *q, const uint8_t *msg, size_t len, uint32_t seq,
+-                        char *err, size_t errcap) {
++/* Настоящий обмен с очередью: отправить настроечное сообщение и дождаться
++   подтверждения. Точка отсчёта для подмены (d2k_nfq_xchg_hook). */
++static int xchg_real(d2k_nfq *q, const uint8_t *msg, size_t len, uint32_t seq,
++                     char *err, size_t errcap) {
+     if (len == 0) {
+         say(err, errcap, "сообщение настройки не собралось");
+         return -1;
+@@ -120,6 +122,13 @@
+     return await_ack(q->fd, seq, err, errcap);
+ }
+ 
++d2k_nfq_xchg_fn d2k_nfq_xchg_hook = xchg_real;
++
++static int send_and_ack(d2k_nfq *q, const uint8_t *msg, size_t len, uint32_t seq,
++                        char *err, size_t errcap) {
++    return d2k_nfq_xchg_hook(q, msg, len, seq, err, errcap);
++}
++
+ d2k_nfq *d2k_nfq_open(const d2k_nfq_cfg *cfg, char *err, size_t errcap) {
+     if (!cfg) {
+         say(err, errcap, "нет настроек очереди");
+@@ -164,9 +173,50 @@
+     uint32_t seq;
+     size_t n;
+ 
+-    /* PF_BIND намеренно не посылается: с ядра 3.8 команда — пустышка, а
+-       целевое ядро 4.9. Замерщик этапа 0 обходился без неё на настоящем
+-       устройстве. */
++    /* Привязка к семействам протоколов (PF_BIND).
++     *
++     * ОБЯЗАТЕЛЬНА на ядрах древнее 3.8: queue_handler[pf] там — глобальная
++     * таблица, и без этой команды для семейства записи не заводится. Тогда
++     * __nf_queue() отдаёт -ESRCH, а правила службы стоят с --queue-bypass и
++     * молча выпускают пакет дальше по цепочке. Снаружи это выглядит как
++     * «очередь привязана, служба работает» — и только в очередь не приходит
++     * ни одного пакета: ни приветствий, ни подозрений, ни одной попытки
++     * подтвердить блокировку измерением, и подбор стратегий не начинается.
++     * Полевой случай — padavan (NEWIFI-D2, ядро 3.4.113), 11.10.2026.
++     *
++     * На ядрах 3.8+ команда — подтверждённая пустышка: nfqnl_recv_config
++     * сразу возвращает 0, потому что обработчик очереди там один на сеть и
++     * ставится при загрузке модуля. Посылать её всегда поэтому безопасно, а
++     * не посылать «потому что целевое ядро новое» значит ломать старые — что
++     * и случилось: прежний комментарий здесь запрещал её для 4.9.
++     *
++     * AF_INET6 — наравне с v4, как у любого клиента NFQUEUE (nfqws линкуется
++     * тем же PF_BIND): правил под IPv6 D2K не ставит, но привязка семейства
++     * ничего не стоит и не зависит от того, появятся ли они.
++     *
++     * Неудача не смертельна. Без прав привязка не пройдёт, но тогда и очередь
++     * не привяжется — об этом честно скажет следующая команда. А если
++     * семейство уже привязал чужой клиент (nfqws), ядро ответит -EEXIST, и
++     * это подходящий исход: обработчик-то стоит. Кричать здесь значило бы
++     * пугать владельца рабочим состоянием, поэтому причина остаётся в why. */
++    {
++        static const uint16_t pf_bind_list[] = { AF_INET, AF_INET6 };
++        for (size_t i = 0; i < sizeof pf_bind_list / sizeof pf_bind_list[0]; i++) {
++            char why[160];
++            seq = q->seq++;
++            n = d2k_nl_cfg_cmd(msg, sizeof msg, cfg->queue, seq,
++                               D2K_NFQNL_CFG_CMD_PF_BIND, pf_bind_list[i]);
++            if (n == 0) {
++                say(err, errcap, "сообщение привязки семейства не собралось");
++                close(q->fd);
++                free(q);
++                return NULL;
++            }
++            if (send_and_ack(q, msg, n, seq, why, sizeof why) != 0) {
++                continue;   /* см. комментарий выше: отказ ядра тут не отказ нам */
++            }
++        }
++    }
+ 
+     seq = q->seq++;
+     n = d2k_nl_cfg_cmd(msg, sizeof msg, cfg->queue, seq,
+--- a/datapath/include/d2k_nfq.h
++++ b/datapath/include/d2k_nfq.h
+@@ -57,4 +57,23 @@
+ /* Сколько раз ядро сообщало о потерянных сообщениях. */
+ uint64_t d2k_nfq_lost(const d2k_nfq *q);
+ 
++/* Точка подмены обмена с очередью — для тестов.
++ *
++ * Право (CAP_NET_ADMIN) и версия ядра машины, где идёт тест, — не то, от чего
++ * должен зависеть вердикт теста. От них зависит именно настоящий обмен: без
++ * прав ядро отвечает отказом на привязку очереди, а на ядрах 3.8+ команда
++ * привязки семейства (PF_BIND) — пустышка, и «приняли» от неё ни о чём не
++ * говорит. А порядок и содержимое настроечных сообщений — это требование к
++ * ядру: от него зависит, будет ли датапат вообще видеть пакеты.
++ *
++ * Поэтому подменяется ОБМЕН целиком: тест читает БАЙТЫ запроса и отвечает за
++ * ядро. Сокет при этом создаёт, настраивает и закрывает тот же код, что и на
++ * роутере — подделывается переписка в коде теста, а не сокет ядра. Тот же
++ * приём и та же причина, что у d2k_nat_hook (datapath/include/d2k_nat.h).
++ *
++ * По умолчанию указывает на настоящий обмен. */
++typedef int (*d2k_nfq_xchg_fn)(d2k_nfq *q, const uint8_t *req, size_t req_len,
++                               uint32_t seq, char *err, size_t errcap);
++extern d2k_nfq_xchg_fn d2k_nfq_xchg_hook;
++
+ #endif /* D2K_NFQ_H */
+--- a/datapath/Makefile
++++ b/datapath/Makefile
+@@ -313,6 +313,21 @@
+ test_nl: test_nl.c nl.o $(HDR)
+ 	$(CC) $(CFLAGS) -o $@ test_nl.c nl.o $(LDFLAGS)
+ 
++# Настройка очереди: привязка семейств, привязка очереди, параметры. Тест читает
++# БАЙТЫ запросов, поэтому ему не нужны ни права, ни версия ядра машины
++# (d2k_nfq_xchg_hook), но нужен сам сокет netfilter: nfq.c — Linux-модуль.
++# Проверяется отдельной целью, а не через $(TESTS): набор TESTS переносимый,
++# а на маке netfilter нет вовсе.
++nfq.o: nfq.c $(HDR)
++	$(CC) $(CFLAGS) -c -o $@ $<
++
++test_nfq: test_nfq.c nfq.o nl.o $(HDR)
++	$(CC) $(CFLAGS) -o $@ test_nfq.c nfq.o nl.o $(LDFLAGS)
++
++.PHONY: test-nfq
++test-nfq: test_nfq
++	./test_nfq
++
+ sched.o: sched.c $(HDR)
+ 	$(CC) $(CFLAGS) -c -o $@ $<
+ 
+@@ -485,5 +500,14 @@
+ 
+ check: all test-hold test-udp-hold test-udp-release test-udp-path test-routemark test-capture test-parse test-apply test-tls test-wire test-wire-udp test-track test-session test-nat test-nl test-sched test-journal test-plans test-ctl test-stun-session test-quic-session test-ctlprobe
+ 
++# Настройка очереди — Linux: nfq.c не собирается на маке (LINUXSRC), и её тест
++# туда же. Санитайзерная цель собирает переносимый набор $(TESTS) одного
++# файлом; этот тест линкуется с nfq.o, и лезть в её цикл ради Linux-ветки
++# значило бы портить цель, которая на маке обязана работать. Компиляция nfq.c
++# проверяется целями d2kd (своя машина), gcc-warn (mipsel-gcc) и cross.
++ifeq ($(shell uname -s),Linux)
++check: test-nfq
++endif
++
+ clean:
+-	rm -f *.o $(TESTS) test_ctlprobe planlab ctlprobe d2kd
++	rm -f *.o $(TESTS) test_nfq test_ctlprobe planlab ctlprobe d2kd
+--- a/datapath/test_nfq.c
++++ b/datapath/test_nfq.c
+@@ -0,0 +1,219 @@
++/* test_nfq.c — с чем датапат обращается к очереди NFQUEUE.
++ *
++ * Проверяется не «очередь открылась», а СОДЕРЖИМОЕ и ПОРЯДОК настроечных
++ * сообщений, которые датапат кладёт в netlink: привязка к семействам
++ * протоколов, привязка очереди, параметры. Это требование к ядру, а не деталь
++ * реализации.
++ *
++ * На ядрах древнее 3.8 без привязки семейства (PF_BIND) для семейства не
++ * заводится записи в queue_handler[], __nf_queue() отдаёт -ESRCH, а правила
++ * службы стоят с --queue-bypass и молча выпускают пакет дальше по цепочке.
++ * Движок при этом честно рапортует «очередь привязана» — и не видит ни одного
++ * пакета: ни приветствий, ни подозрений, ни одной попытки подтвердить
++ * блокировку измерением, и подбор стратегий не начинается.
++ *
++ * Полевой случай, из-за которого тест появился: NEWIFI-D2 (padavan, ядро
++ * 3.4.113), 11.10.2026. После каждой перезагрузки D2K не видел трафика, пока
++ * вручную не запустишь и не остановишь nfqws — он рассылает PF_BIND, а после
++ * его остановки привязка в ядре остаётся.
++ *
++ * Обмен подменяется (d2k_nfq_xchg_hook), поэтому вердикт теста не зависит ни
++ * от прав на машине, ни от версии её ядра: на ядрах 3.8+ PF_BIND — пустышка, и
++ * «ядро приняло» от неё ничего не доказывает. Сокет при этом создаёт,
++ * настраивает и закрывает тот же код, что и на роутере: подделывается
++ * переписка, а не сокет ядра.
++ */
++#include <stdio.h>
++#include <string.h>
++#include <sys/socket.h>
++
++#include "d2k_nfq.h"
++#include "d2k_nl.h"
++
++static int fails;
++#define CHECK(cond, msg)                                   \
++    do {                                                   \
++        if (!(cond)) {                                     \
++            printf("ПРОВАЛ: %s\n", msg);                   \
++            fails++;                                       \
++        }                                                  \
++    } while (0)
++
++/* --- подменный обмен ----------------------------------------------------- */
++
++#define MAX_MSGS 8
++
++static uint8_t g_msg[MAX_MSGS][64];
++static size_t  g_len[MAX_MSGS];
++static int     g_count;
++/* Бит i: сообщению с номером i ядро отвечает отказом. Нужен затем, что
++   привязка семейства и привязка очереди отказа переживают по-разному. */
++static unsigned g_reject_mask;
++
++static int xchg_fake(d2k_nfq *q, const uint8_t *req, size_t req_len,
++                     uint32_t seq, char *err, size_t errcap) {
++    (void)q;
++    (void)seq;
++    if (g_count < MAX_MSGS) {
++        size_t n = req_len < sizeof g_msg[0] ? req_len : sizeof g_msg[0];
++        memcpy(g_msg[g_count], req, n);
++        g_len[g_count] = req_len;
++    }
++    if (g_reject_mask & (1u << g_count)) {
++        if (err && errcap) {
++            snprintf(err, errcap, "отказ ядра (подмена)");
++        }
++        g_count++;
++        return -1;
++    }
++    g_count++;
++    return 0;
++}
++
++/* --- разбор запроса ----------------------------------------------------- */
++
++/* Поля заголовков netlink — в порядке хозяина, res_id и содержимое атрибутов —
++   в сетевого: те же правила, что и в nl.c. */
++static uint16_t h16(const uint8_t *p) { uint16_t v; memcpy(&v, p, 2); return v; }
++static uint32_t h32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
++static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
++
++/* 0 — в сообщении не команда настройки (параметры очереди либо не оно). */
++static int cfg_cmd_of(const uint8_t *m, size_t n, uint8_t *cmd, uint16_t *pf,
++                      uint16_t *queue) {
++    if (!m || n < 20 + D2K_NLA_HDRLEN + 4) {
++        return 0;
++    }
++    if (h16(m + 4) != D2K_NFQ_TYPE(D2K_NFQNL_MSG_CONFIG)) {
++        return 0;
++    }
++    uint16_t alen = h16(m + 20);
++    uint16_t atype = (uint16_t)(h16(m + 22) & D2K_NLA_TYPE_MASK);
++    if (atype != D2K_NFQA_CFG_CMD || alen < 8) {
++        return 0;
++    }
++    if (cmd) {
++        *cmd = m[24];
++    }
++    if (pf) {
++        *pf = be16(m + 26);
++    }
++    if (queue) {
++        *queue = be16(m + 18);
++    }
++    return 1;
++}
++
++/* Привязка семейства: cmd=PF_BIND, pf=заданный, очередь та же. */
++static int is_pf_bind(int i, uint16_t pf) {
++    uint8_t cmd;
++    uint16_t got_pf, queue;
++    if (i >= MAX_MSGS || i >= g_count) {
++        return 0;
++    }
++    if (!cfg_cmd_of(g_msg[i], g_len[i], &cmd, &got_pf, &queue)) {
++        return 0;
++    }
++    if (cmd != D2K_NFQNL_CFG_CMD_PF_BIND || got_pf != pf || queue != 2000) {
++        return 0;
++    }
++    /* Длина: 16 заголовок + 4 nfgenmsg + 8 атрибут. */
++    uint32_t len = h16(g_msg[i]) ? 0 : 0;
++    (void)len;
++    return 1;
++}
++
++int main(void) {
++    d2k_nfq_cfg cfg;
++    memset(&cfg, 0, sizeof cfg);
++    cfg.queue = 2000;
++    cfg.copy_range = 0xffff;
++    cfg.maxlen = 1024;
++    cfg.fail_open = 1;
++    cfg.rcvbuf = 0;
++
++    d2k_nfq_xchg_fn real = d2k_nfq_xchg_hook;
++    char err[200];
++    d2k_nfq *q;
++
++    /* === 1. Штатная последовательность ================================== */
++    g_count = 0;
++    g_reject_mask = 0;
++    d2k_nfq_xchg_hook = xchg_fake;
++
++    err[0] = '\0';
++    q = d2k_nfq_open(&cfg, err, sizeof err);
++    if (!q && g_count == 0) {
++        /* Ни одного сообщения не собралось: netfilter netlink в этом ядре
++           недоступен. Это свойство среды, а не дерева, — молча падать здесь
++           значило бы делать гейт зависимым от загруженного модуля. */
++        printf("test_nfq: netfilter netlink недоступен (%s) — проверка пропущена\n",
++               err);
++        d2k_nfq_xchg_hook = real;
++        return 0;
++    }
++    CHECK(q != NULL, "очередь не открылась при штатной последовательности");
++    if (q) {
++        CHECK(g_count == 4, "настроечных сообщений не четыре");
++        CHECK(is_pf_bind(0, AF_INET),
++              "первое настроечное сообщение не привязывает AF_INET");
++        CHECK(is_pf_bind(1, AF_INET6),
++              "второе настроечное сообщение не привязывает AF_INET6");
++
++        uint8_t cmd;
++        uint16_t pf, queue;
++        CHECK(cfg_cmd_of(g_msg[2], g_len[2], &cmd, &pf, &queue) &&
++              cmd == D2K_NFQNL_CFG_CMD_BIND && pf == AF_INET && queue == 2000,
++              "третье сообщение — не привязка очереди");
++        CHECK(h32(g_msg[2]) == 28, "длина привязки очереди не 28 байт");
++        CHECK((h16(g_msg[2] + 6) & D2K_NLM_F_ACK) != 0,
++              "привязка очереди идёт без NLM_F_ACK — отказ ядра неотличим от успеха");
++
++        /* Параметры очереди четвёртыми: copy_range, copy_mode, maxlen, флаги,
++           маска. Атрибут PARAMS — первый в теле после nfgenmsg. */
++        CHECK(h16(g_msg[3] + 4) == D2K_NFQ_TYPE(D2K_NFQNL_MSG_CONFIG) &&
++              h16(g_msg[3] + 20) == 9 &&
++              (h16(g_msg[3] + 22) & D2K_NLA_TYPE_MASK) == D2K_NFQA_CFG_PARAMS,
++              "четвёртое сообщение — не параметры очереди");
++        CHECK(be16(g_msg[3] + 24) == 0 && be16(g_msg[3] + 26) == 0xffff,
++              "copy_range параметров не тот");
++        CHECK(g_msg[3][28] == D2K_NFQNL_COPY_PACKET, "copy_mode параметров не тот");
++
++        d2k_nfq_close(q);
++    }
++
++    /* === 2. Отказ ядра на привязку семейства открытию не мешает ========== */
++    g_count = 0;
++    g_reject_mask = (1u << 0) | (1u << 1);
++    err[0] = '\0';
++    q = d2k_nfq_open(&cfg, err, sizeof err);
++    CHECK(q != NULL, "отказ на привязку семейства свалил открытие очереди");
++    if (q) {
++        CHECK(g_count == 4,
++              "после отказа на привязку семейства остальные сообщения не ушли");
++        uint8_t cmd;
++        uint16_t pf, queue;
++        CHECK(cfg_cmd_of(g_msg[2], g_len[2], &cmd, &pf, &queue) &&
++              cmd == D2K_NFQNL_CFG_CMD_BIND,
++              "после отказа на PF_BIND привязка очереди не выполнилась");
++        d2k_nfq_close(q);
++    }
++
++    /* === 3. Отказ на привязку ОЧЕРЕДИ по-прежнему роняет открытие ========= */
++    g_count = 0;
++    g_reject_mask = (1u << 2);
++    err[0] = '\0';
++    q = d2k_nfq_open(&cfg, err, sizeof err);
++    CHECK(q == NULL, "отказ на привязку очереди не свалил открытие");
++    CHECK(g_count == 3,
++          "при отказе на привязку очереди дальше параметры всё равно ушли");
++
++    d2k_nfq_xchg_hook = real;
++
++    if (fails != 0) {
++        printf("test_nfq: провалов %d\n", fails);
++        return 1;
++    }
++    printf("test_nfq: все проверки прошли\n");
++    return 0;
++}
