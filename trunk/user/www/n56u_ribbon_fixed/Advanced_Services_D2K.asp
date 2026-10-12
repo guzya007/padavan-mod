@@ -32,8 +32,6 @@ $j(document).ready(function() {
 
 <% login_state_hook(); %>
 
-var hw_nat_mode = "<% nvram_get_x("", "hw_nat_mode"); %>";
-
 function initial(){
 	show_banner(1);
 	show_menu(5,7,7);
@@ -71,12 +69,6 @@ function change_d2k_enabled(){
 
 	showhide_div('d2k_show', v);
 	inputCtrl(document.form['d2kconf.config'], v);
-
-	/* Аппаратный ускоритель NAT уводит транзитные пакеты мимо Netfilter, и в
-	   NFQUEUE не попадает ничего: службы работают, правила стоят, обхода нет.
-	   Настройку за владельца не меняем (она влияет на скорость), но и молчать
-	   нельзя — симптом выглядит как «D2K не работает». */
-	showhide_div('row_d2k_hwnat', v && hw_nat_mode != "2");
 }
 
 </script>
@@ -153,12 +145,6 @@ function change_d2k_enabled(){
                                                     <input type="radio" name="d2k_enable" id="d2k_enable_1" class="input" value="1" <% nvram_match_x("", "d2k_enable", "1", "checked"); %>/><#checkbox_Yes#>
                                                     <input type="radio" name="d2k_enable" id="d2k_enable_0" class="input" value="0" <% nvram_match_x("", "d2k_enable", "0", "checked"); %>/><#checkbox_No#>
                                                 </div>
-                                            </td>
-                                        </tr>
-
-                                        <tr id="row_d2k_hwnat" style="display:none">
-                                            <td colspan="2" style="padding: 0; border: none">
-                                                <div class="alert alert-error" style="margin: 10px;"><#Adm_Svc_D2K_HwNat#></div>
                                             </td>
                                         </tr>
 

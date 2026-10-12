@@ -55,7 +55,7 @@
  d2k_nfq *d2k_nfq_open(const d2k_nfq_cfg *cfg, char *err, size_t errcap) {
      if (!cfg) {
          say(err, errcap, "нет настроек очереди");
-@@ -164,9 +173,50 @@
+@@ -164,9 +173,51 @@
      uint32_t seq;
      size_t n;
  
@@ -102,7 +102,8 @@
 +                return NULL;
 +            }
 +            if (send_and_ack(q, msg, n, seq, why, sizeof why) != 0) {
-+                continue;   /* см. комментарий выше: отказ ядра тут не отказ нам */
++                /* Пусто намеренно: см. последний абзац комментария выше.
++                   Причина отказа остаётся в why и дальше не идёт. */
 +            }
 +        }
 +    }
@@ -297,9 +298,9 @@
 +    if (cmd != D2K_NFQNL_CFG_CMD_PF_BIND || got_pf != pf || queue != 2000) {
 +        return 0;
 +    }
-+    /* Длина: 16 заголовок + 4 nfgenmsg + 8 атрибут. */
-+    uint32_t len = h16(g_msg[i]) ? 0 : 0;
-+    (void)len;
++    /* Длина (16 заголовок + 4 nfgenmsg + 8 атрибут = 28) проверяется на
++       привязке очереди в main: сообщение собирает тот же d2k_nl_cfg_cmd, и
++       повторять проверку на каждом семействе нечего. */
 +    return 1;
 +}
 +
