@@ -25,7 +25,7 @@
 #
 # Проверено: make -C datapath check — зелёный, test_nfq без правки падает;
 # make -C datapath d2kd собирается с -Werror; патч ложится на чистый архив
-# 4f8615f.
+# 24578a1.
 --- a/datapath/nfq.c
 +++ b/datapath/nfq.c
 @@ -107,8 +107,10 @@
@@ -138,7 +138,7 @@
  #endif /* D2K_NFQ_H */
 --- a/datapath/Makefile
 +++ b/datapath/Makefile
-@@ -313,6 +313,21 @@
+@@ -328,6 +328,21 @@
  test_nl: test_nl.c nl.o $(HDR)
  	$(CC) $(CFLAGS) -o $@ test_nl.c nl.o $(LDFLAGS)
  
@@ -160,7 +160,7 @@
  sched.o: sched.c $(HDR)
  	$(CC) $(CFLAGS) -c -o $@ $<
  
-@@ -485,5 +500,14 @@
+@@ -519,5 +534,14 @@
  
  check: all test-hold test-udp-hold test-udp-release test-udp-path test-routemark test-capture test-parse test-apply test-tls test-wire test-wire-udp test-track test-session test-nat test-nl test-sched test-journal test-plans test-ctl test-stun-session test-quic-session test-ctlprobe
  

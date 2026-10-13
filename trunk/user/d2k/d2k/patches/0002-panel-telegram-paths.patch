@@ -39,7 +39,7 @@
 # остались, в файле встречаются ровно по одному разу.
 --- a/files/S99d2k
 +++ b/files/S99d2k
-@@ -1102,2 +1102,3 @@
+@@ -1131,2 +1131,3 @@
              --engine-pid "$DP_PID" --controller-pid "$CT_PID" \
 +            --telegram-pid "$TG_PID" --telegram-status "$TG_STATUS" \
              "$@" --log "$LOG/panel.log" \

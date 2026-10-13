@@ -146,10 +146,16 @@ replace_line files/d2k-tg-watchdog.sh \
 # поэтому сторож ищет напарника как "$DIR/d2k-tg-firewall.sh". Здесь они
 # разведены: DIR стал /tmp/d2k, а скрипты лежат в /usr/share/d2k. Без этой
 # правки проверка [ -x ... ] просто не сработала бы, и правила туннеля
-# остались бы без присмотра — молча, потому что строка кончается "|| true".
+# остались бы без присмотра — молча, потому что действие кончается "|| true".
+#
+# Строка искалась в виде "[ -x ... ] && ... || true" до 13.10.2026: свой
+# линтер оболочки апстрим завёл только тогда (scripts/lint-shell.sh,
+# коммиты 40500d6a7 и 041fb6eaa) и переписал все такие конструкции в
+# настоящие if. Здесь взят новый вид строки, и форма замены приведена к той
+# же — иначе следующий линтер апстрима споткнётся уже о нашу правку.
 replace_line files/d2k-tg-watchdog.sh \
-    '    [ -x "$DIR/d2k-tg-firewall.sh" ] && "$DIR/d2k-tg-firewall.sh" heal >/dev/null 2>&1 || true' \
-    '    FW=${D2K_RELEASE:-/usr/share/d2k}/d2k-tg-firewall.sh; [ -x "$FW" ] && "$FW" heal >/dev/null 2>&1 || true'
+    '    if [ -x "$DIR/d2k-tg-firewall.sh" ]; then "$DIR/d2k-tg-firewall.sh" heal >/dev/null 2>&1 || true; fi' \
+    '    FW=${D2K_RELEASE:-/usr/share/d2k}/d2k-tg-firewall.sh; if [ -x "$FW" ]; then "$FW" heal >/dev/null 2>&1 || true; fi'
 
 ###############################################################################
 # files/d2k-fw-heal.sh — сторож правил. INIT_SCRIPT он и так берёт из

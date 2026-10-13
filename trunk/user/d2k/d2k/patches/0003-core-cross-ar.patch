@@ -1,0 +1,47 @@
+# core/Makefile: собирать libd2k_udp.a кросс-архиватором, а не хозяйским.
+#
+# С 13.10.2026 ядро кладёт общий UDP-движок (компилятор и исполнитель планов,
+# QUIC, фрагментация) в статическую библиотеку libd2k_udp.a и подшивает её к
+# линковке через "LDFLAGS += libd2k_udp.a". Собирается она так:
+#
+#       ar rcs $@ $(UDP_ENGINE_OBJ)
+#
+# Голое "ar" — это хозяйский архиватор. В кросс-сборке padavan он тут не к
+# месту дважды.
+#
+# Во-первых, padavan уже сообщает сборке правильный инструмент. В
+# vendors/config/mips/config.arch стоит AR = $(CROSS_COMPILE)ar, то есть
+# АБСОЛЮТНЫЙ путь до mipsel-linux-uclibc-ar, а первая строка того же файла —
+# .EXPORT_ALL_VARIABLES:, так что AR уходит в окружение всех вложенных make.
+# В core/Makefile своего "AR ?=" нет, поэтому встроенное значение make (AR=ar)
+# переменной из окружения уступает, и $(AR) здесь разворачивается именно в
+# кросс-архиватор. Менять нечего, кроме самой строки.
+#
+# Во-вторых, выбора "хозяйский или кросс" на самом деле нет: каталог bin
+# тулчейна в PATH не входит. trunk/Makefile дописывает в PATH только
+# $(ROOTDIR)/tools, а кросс-инструменты зовутся исключительно по абсолютному
+# пути из config.arch. Значит "ar" — это всегда /usr/bin/ar сборочной машины,
+# никогда не тот, которым собрано всё остальное.
+#
+# Почему это не уронило сборку сразу: хозяйский GNU ar читает объектник
+# ELF32-LSB MIPS через обобщённую цель BFD elf32-little, даже когда собран без
+# поддержки MIPS вовсе, и индекс символов строит верный (проверено на этой
+# машине: ar rcs на подложном объектнике с e_machine=EM_MIPS — успех, индекс
+# на месте). То есть сегодня оно работает — случайно. Ломается это молча и в
+# неочевидном месте: llvm-ar вместо GNU, binutils без обобщённой цели, ar,
+# который откажется от незнакомой машины, — и линковка d2kc упадёт на
+# библиотеке, которую собрал не тот инструмент.
+#
+# Правка — одно слово, апстриму вреда нет: у него AR не задан и make
+# подставит то же самое "ar".
+--- a/core/Makefile
++++ b/core/Makefile
+@@ -1214,7 +1214,7 @@
+ libd2k_udp.a: $(UDP_ENGINE_SRC) $(UDP_ENGINE_HDR)
+ 	@mkdir -p .udp-engine
+ 	@for src in $(UDP_ENGINE_SRC); do $(CC) $(CFLAGS) -c $$src -o .udp-engine/$$(basename $$src .c).o || exit 1; done
+-	ar rcs $@ $(UDP_ENGINE_OBJ)
++	$(AR) rcs $@ $(UDP_ENGINE_OBJ)
+ LDFLAGS += libd2k_udp.a
+ 
+ UDP_SESSION_SRC = httpup_logic.c ../datapath/http80.c ../datapath/hold.c ../datapath/capture.c ../datapath/nat.c ../datapath/ctq.c ../datapath/nl.c ../datapath/track.c ../datapath/tls.c ../datapath/journal.c ../datapath/plans.c ../core/stun.c

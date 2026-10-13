@@ -1,6 +1,6 @@
 # https://github.com/necronicle/d2k
 
-SRC_COMMIT = 4f8615f4603fea79a0eef3db774f7756468c7631
+SRC_COMMIT = 24578a1e40f54f834bf6ad5b7074d0f6c5b48a7e
 SRC_NAME = d2k-$(SRC_COMMIT)
 SRC_URL = https://github.com/necronicle/d2k/archive/$(SRC_COMMIT).tar.gz
 
