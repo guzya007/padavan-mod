@@ -25,7 +25,7 @@
 #
 # Проверено: make -C datapath check — зелёный, test_nfq без правки падает;
 # make -C datapath d2kd собирается с -Werror; патч ложится на чистый архив
-# 24578a1.
+# 08677df.
 --- a/datapath/nfq.c
 +++ b/datapath/nfq.c
 @@ -107,8 +107,10 @@
